@@ -5,9 +5,9 @@ import (
 	"log"
 	"net/http"
 	"github.com/gorilla/mux"
-	"github.com/kimbbakar/rest-api/app_2/TextFileRead"
-	"github.com/kimbbakar/rest-api/app_2/InMemoryfile"
-	"github.com/kimbbakar/rest-api/app_2/Mongodb"
+	"github.com/kimbbakar/Golang-with-Redis/TextFileRead"
+	"github.com/kimbbakar/Golang-with-Redis/InMemoryfile"
+	"github.com/kimbbakar/Golang-with-Redis/Mongodb"
 	"flag"
 	)
 
