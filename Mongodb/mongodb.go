@@ -1,10 +1,13 @@
 package Mongodb
 
 import (
-	"github.com/globalsign/mgo" 
+
 	"encoding/json"
-	"gopkg.in/mgo.v2/bson"
 	"log"
+
+	"github.com/globalsign/mgo" 
+	"gopkg.in/mgo.v2/bson"
+	"github.com/go-redis/redis"
 )
 
 const (
