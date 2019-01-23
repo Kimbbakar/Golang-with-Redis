@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	url = "mongo:27017"
+	url = "localhost"
 )
 
 type Person struct {
@@ -22,7 +22,8 @@ type Person struct {
 
 type Mongodb struct { 
 	session *mgo.Session
-	db 		*mgo.Database
+	db 		*mgo.Database 
+	client	*redis.Client
 }
 
 func (T *Mongodb)  Init()   {
@@ -30,18 +31,20 @@ func (T *Mongodb)  Init()   {
 	T.session, err = mgo.Dial(url)
 	if err != nil {
 		log.Fatalln(err)
-		log.Fatalln("mongo err") 
 	}	
-
-	//T.session.DB("People").C("info").Insert(bson.M{"id": "0","firstname":"tmp","lastname":"tmp" })
 	T.session.SetMode(mgo.Monotonic, true)
-
 	T.db = T.session.DB("People")
-	
 	if T.db == nil {
 		log.Println("db People not found, exiting ")
 		return
 	}
+
+
+	T.client = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 }
 
 func (T *Mongodb)  Close()   {
@@ -56,76 +59,144 @@ func (T *Mongodb) DatabaseName () string {
 
 
 func (T *Mongodb) ReadFile(parameter map[string] string) []byte {
-	c := T.db.C("info")
-	var result Person
-	count, err := c.Find(bson.M{"id": parameter["id"] }).Count()
 
-	if err!=nil{
+	val, err := T.client.Get(parameter["id"]).Result()
+	if err == redis.Nil {
+		log.Println("Not found in Redis")
+		c := T.db.C("info")
+		var result Person
+		count, err := c.Find(bson.M{"id": parameter["id"] }).Count()
+	
+		if err!=nil{
+			log.Fatal(err)
+		}
+	
+		if count==0{
+			return []byte ("Person not found")
+		}
+	
+		c.Find(bson.M{"id": parameter["id"] }).One(&result)
+	
+		content,_ := json.Marshal(result)
+
+		err = T.client.Set(parameter["id"], content, 0).Err()
+		if err != nil {
+			log.Fatal(err)
+		}		
+	
+	 
+	} else if err != nil {
 		log.Fatal(err)
-	}
 
-	if count==0{
-		return []byte ("Person not found")
-	}
+	} 
+	
+	val, err = T.client.Get(parameter["id"]).Result()
+	if err != nil {
+		log.Fatal(err)
+	}		
+	
+	return []byte(val)
 
-	c.Find(bson.M{"id": parameter["id"] }).One(&result)
-
-	content,_ := json.Marshal(result)
-
-	return content
 } 
 
 func (T *Mongodb) WriteFile(content map[string] interface{} ) {
  
 	c := T.db.C("info")
-	var result Person
+	id,ok := content["id"].(string)
 
+	if  ok{
+		count, _ := c.Find(bson.M{"id": id}).Count()
+		if count==0{
 
-	b,_:=json.Marshal(content)
-	_=json.Unmarshal(b,&result) 
-	c.Insert(result)
+			contentToreturn,err := json.Marshal(content)
+			if err != nil {
+				log.Fatal(err)
+			}
+			err = T.client.Set(id, string (contentToreturn), 0).Err()		
+			if err != nil {
+				log.Fatal(err)
+			}
+
+	
+			var tmp Person
+			json.Unmarshal(contentToreturn,&tmp)
+			err = c.Insert(tmp)
+			if err != nil {
+				log.Fatal(err)
+			}
+ 
+			T.client.Del("allPeople")
+		}  
+	}
+	 
 }
 
 func (T *Mongodb) GetPeople() []byte{
- 
 
-	c := T.db.C("info")
+	val, err := T.client.Get("allPeople").Result()
+	if err == redis.Nil {
+		log.Println("Not found in Redis")	
+		c := T.db.C("info")
 
-	count, _ := c.Find(nil).Count()
-	if count==0{
-		return []byte ("Person not found")
-	}
+		count, _ := c.Find(nil).Count()
+		if count==0{
+			return []byte ("Person not found")
+		}
+	
+		var results []map[string] interface{}
+		_ = c.Find(nil).All(&results)
+	
+		content,_ := json.Marshal(results)
 
-	var results []map[string] interface{}
-	_ = c.Find(nil).All(&results)
+		err = T.client.Set("allPeople", string (content), 0).Err()		
+		if err != nil {
+			log.Fatal(err)
+		}		
 
-	content,_ := json.Marshal(results)
+		return content
+	
 
-	return content
+	} else {
+
+		return [] byte(val)
+	} 
+
 
 } 
 
 func (T *Mongodb) Update(id string, person map[string]string ) []byte {
-	c := T.db.C("info")
 
-	var content = "Person not found"
-	
-  
+	c := T.db.C("info")
+ 	var content = "Person not found"
+
+
 	if id != person["id"]{
 		return []byte ("url id and body id not same")
 	}
 
-	b,_:=json.Marshal(person) 
+	count,_ := c.Find(bson.M{"id": id}).Count()
+ 
+	if count!=0{
+		Bcontent,err := json.Marshal(person)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = T.client.Set(id, string (Bcontent), 0).Err()		
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	var tmp Person
-	_ = json.Unmarshal(b,&tmp)
+		var tmp Person
+		json.Unmarshal(Bcontent,&tmp)
+		err = c.Update(bson.M{"id": id} ,tmp   )
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	count, _ := c.Find(bson.M{"id": id}).Count()
-	if count==0{
-		return []byte (content)
+		T.client.Del("allPeople")		
+
+		return Bcontent
 	}
 
-	c.Update(bson.M{"id": id}, bson.M{"$set": tmp } )
- 
-	return b
+	return []byte (content)
 } 

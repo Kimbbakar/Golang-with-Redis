@@ -128,8 +128,7 @@ func DatabaseProcess(){
 func main() {
 
 	var database =flag.String("db", "mongo", "Default data bse is file")
-	flag.Parse()
-	log.Println(*database)
+	flag.Parse() 
 	
 	if *database=="file"{
 		db = &TextFileRead.TextFileRead{}
