@@ -1,0 +1,27 @@
+version: '3'
+
+services:
+  app:
+    build: . 
+    ports: 
+      -  8080:8080
+    depends_on: 
+      - db 
+    networks:
+      - network1
+  db:
+    image: mongo:latest
+    container_name: 'mongo'
+    ports:
+       - 27017:27017
+    volumes:
+      - "mongodata:/data/db"
+    networks:
+      - network1
+
+volumes:
+  mongodata:
+
+networks:
+  network1:
+    driver: bridge    
